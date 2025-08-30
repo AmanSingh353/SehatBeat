@@ -16,22 +16,46 @@ import {
   Star,
   Edit,
   Trash2,
-  X
+  X,
+  Brain
 } from "lucide-react";
-import { useClinicalDocs } from "@/hooks/useConvex";
+// import { useClinicalDocs } from "@/hooks/useConvex"; // Temporarily disabled to fix white screen
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useMutation as useConvexMutation } from "convex/react";
+import EnhancedClinicalDocsUploadModal from "@/components/EnhancedClinicalDocsUploadModal";
+import AIPDFReader from "@/components/AIPDFReader";
 
 const ClinicalDocs = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("all");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<any>(null);
   
-  const { clinicalDocs, clinicalDocsStats, addClinicalDoc, updateDoc, deleteDoc } = useClinicalDocs();
+  // Temporarily disable Convex integration to fix white screen
+  const clinicalDocs: any[] = [];
+  const clinicalDocsStats = { totalDocuments: 0, thisMonth: 0, byCategory: {}, priorityItems: 0 };
+  const addClinicalDoc = async (docData: any) => {
+    console.log("addClinicalDoc called with:", docData);
+    // This will be handled by local storage for now
+    return null;
+  };
+  const updateDoc = async (docId: string, updates: any) => {
+    console.log("updateDoc called with:", docId, updates);
+    // This will be handled by local storage for now
+    return null;
+  };
+  const deleteDoc = async (docId: string) => {
+    console.log("deleteDoc called with:", docId);
+    // This will be handled by local storage for now
+    return null;
+  };
+  
+  const [localDocs, setLocalDocs] = useState<any[]>([]);
   
   // Form state for creating/editing documents
   const [formData, setFormData] = useState({
@@ -44,34 +68,91 @@ const ClinicalDocs = () => {
   });
   
   const [tagInput, setTagInput] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isAIAnalysisModalOpen, setIsAIAnalysisModalOpen] = useState(false);
+  const [selectedFileForAI, setSelectedFileForAI] = useState<File | null>(null);
+
+  // Convex storage mutations
+  const generateUploadUrl = (useConvexMutation as any)("generateUploadUrl");
 
   const handleCreateDocument = async () => {
     if (!formData.title || !formData.content || !formData.category) return;
-    
-    await addClinicalDoc({
-      title: formData.title,
-      content: formData.content,
-      category: formData.category,
-      tags: formData.tags,
-      isPrivate: formData.isPrivate,
-      doctorId: formData.doctorId || undefined,
-    });
+    try {
+      await addClinicalDoc({
+        title: formData.title,
+        content: formData.content,
+        category: formData.category,
+        tags: formData.tags,
+        isPrivate: formData.isPrivate,
+        doctorId: formData.doctorId || undefined,
+      });
+    } catch {
+      // Fallback: create a local document so the UI works without backend/auth
+      const now = Date.now();
+      setLocalDocs(prev => [
+        ...prev,
+        {
+          _id: `local-${now}`,
+          _creationTime: now,
+          createdAt: now,
+          userId: 'local',
+          title: formData.title,
+          content: formData.content,
+          category: formData.category,
+          tags: [...formData.tags],
+          attachments: [],
+          updatedAt: now,
+          doctorId: formData.doctorId || undefined,
+          isPrivate: formData.isPrivate,
+        },
+      ]);
+    }
     
     setIsCreateModalOpen(false);
     resetForm();
   };
 
   const handleEditDocument = async () => {
-    if (!editingDoc || !formData.title || !formData.content || !formData.category) return;
+    if (!editingDoc || !formData.title || !formData.content || !formData.category) {
+      console.log("Validation failed:", { editingDoc, formData });
+      return;
+    }
     
-    await updateDoc(editingDoc._id, {
-      title: formData.title,
-      content: formData.content,
-      category: formData.category,
-      tags: formData.tags,
-      isPrivate: formData.isPrivate,
-      doctorId: formData.doctorId || undefined,
-    });
+    console.log("Updating document:", editingDoc._id, formData);
+    
+    try {
+      await updateDoc(editingDoc._id, {
+        title: formData.title,
+        content: formData.content,
+        category: formData.category,
+        tags: formData.tags,
+        isPrivate: formData.isPrivate,
+        doctorId: formData.doctorId || undefined,
+      });
+      console.log("Document updated successfully");
+    } catch (error) {
+      console.log("Update failed, checking if local document:", error);
+      // Fallback update for local docs
+      if (String(editingDoc._id).startsWith('local-')) {
+        console.log("Updating local document");
+        setLocalDocs(prev => prev.map(d => d._id === editingDoc._id ? {
+          ...d,
+          title: formData.title,
+          content: formData.content,
+          category: formData.category,
+          tags: [...formData.tags],
+          isPrivate: formData.isPrivate,
+          doctorId: formData.doctorId || undefined,
+          updatedAt: Date.now(),
+        } : d));
+        console.log("Local document updated successfully");
+      } else {
+        console.error("Failed to update remote document:", error);
+        // You might want to show an error message to the user here
+        return; // Don't close the modal if the update failed
+      }
+    }
     
     setIsEditModalOpen(false);
     setEditingDoc(null);
@@ -80,13 +161,147 @@ const ClinicalDocs = () => {
 
   const handleDeleteDocument = async (docId: string) => {
     if (confirm("Are you sure you want to delete this document?")) {
-      await deleteDoc(docId);
+      try {
+        await deleteDoc(docId);
+      } catch {
+        if (String(docId).startsWith('local-')) {
+          setLocalDocs(prev => prev.filter(d => d._id !== docId));
+        }
+      }
+    }
+  };
+
+  // Enhanced upload handler for the new modal
+  const handleEnhancedUpload = async (file: File, metadata: {
+    title: string;
+    category: string;
+    description?: string;
+    tags: string[];
+    isPrivate: boolean;
+  }) => {
+    setIsUploading(true);
+    
+    // For now, use local storage since Convex isn't connected
+    try {
+      const now = Date.now();
+      const objectUrl = URL.createObjectURL(file);
+      
+      // Add to local documents immediately
+      const newDoc = {
+        _id: `local-${now}`,
+        _creationTime: now,
+        createdAt: now,
+        userId: 'local',
+        title: metadata.title,
+        content: metadata.description || `Uploaded file: ${file.name}`,
+        category: metadata.category,
+        tags: [...metadata.tags],
+        attachments: [objectUrl],
+        fileType: file.type,
+        fileName: file.name,
+        updatedAt: now,
+        doctorId: formData.doctorId || undefined,
+        isPrivate: metadata.isPrivate,
+      };
+      
+      setLocalDocs(prev => [newDoc, ...prev]);
+      
+      // Try to add to Convex if available (but don't fail if it's not)
+      try {
+        if (typeof addClinicalDoc === 'function') {
+          await addClinicalDoc({
+            title: metadata.title,
+            content: metadata.description || file.name,
+            category: metadata.category,
+            tags: metadata.tags,
+            isPrivate: metadata.isPrivate,
+            doctorId: formData.doctorId || undefined,
+            attachments: [objectUrl],
+          });
+        }
+      } catch (convexError) {
+        console.log("Convex not available, using local storage:", convexError);
+      }
+      
+    } catch (error) {
+      console.error("Upload failed:", error);
+      alert("Upload failed. Please try again.");
+    } finally {
+      setIsUploading(false);
+      setIsUploadModalOpen(false);
+      resetForm();
+    }
+  };
+
+  // Legacy upload handler (keeping for compatibility)
+  const handleUploadDocument = async () => {
+    if (!formData.title || !formData.category || !uploadFile) return;
+    setIsUploading(true);
+    
+    try {
+      const now = Date.now();
+      const objectUrl = URL.createObjectURL(uploadFile);
+      
+      // Add to local documents immediately
+      const newDoc = {
+        _id: `local-${now}`,
+        _creationTime: now,
+        createdAt: now,
+        userId: 'local',
+        title: formData.title,
+        content: formData.content || `Uploaded file: ${uploadFile.name}`,
+        category: formData.category,
+        tags: [...formData.tags],
+        attachments: [objectUrl],
+        fileType: uploadFile.type,
+        fileName: uploadFile.name,
+        updatedAt: now,
+        doctorId: formData.doctorId || undefined,
+        isPrivate: formData.isPrivate,
+      };
+      
+      setLocalDocs(prev => [newDoc, ...prev]);
+      
+      // Try to add to Convex if available (but don't fail if it's not)
+      try {
+        if (typeof addClinicalDoc === 'function') {
+          await addClinicalDoc({
+            title: formData.title,
+            content: formData.content || uploadFile.name,
+            category: formData.category,
+            tags: formData.tags,
+            attachments: [objectUrl],
+            isPrivate: formData.isPrivate,
+            doctorId: formData.doctorId || undefined,
+          });
+        }
+      } catch (convexError) {
+        console.log("Convex not available, using local storage:", convexError);
+      }
+      
+    } catch (error) {
+      console.error("Upload failed:", error);
+      alert("Upload failed. Please try again.");
+    } finally {
+      setIsUploading(false);
+      setIsUploadModalOpen(false);
+      setUploadFile(null);
+      resetForm();
     }
   };
 
   const openEditModal = (doc: any) => {
+    console.log("Opening edit modal for document:", doc);
     setEditingDoc(doc);
     setFormData({
+      title: doc.title,
+      content: doc.content,
+      category: doc.category,
+      tags: doc.tags || [],
+      isPrivate: doc.isPrivate,
+      doctorId: doc.doctorId || "",
+    });
+    console.log("Form data set to:", {
       title: doc.title,
       content: doc.content,
       category: doc.category,
@@ -109,6 +324,11 @@ const ClinicalDocs = () => {
     setTagInput("");
   };
 
+  const openAIAnalysisModal = (file: File) => {
+    setSelectedFileForAI(file);
+    setIsAIAnalysisModalOpen(true);
+  };
+
   const addTag = () => {
     if (tagInput.trim() && !formData.tags.includes(tagInput.trim())) {
       setFormData(prev => ({
@@ -127,29 +347,53 @@ const ClinicalDocs = () => {
   };
 
   const getPriorityColor = (tags: string[]) => {
+    // Keep custom tags neutral by default
     if (tags.includes("High") || tags.includes("Priority")) return "destructive";
     if (tags.includes("Medium")) return "default";
     return "secondary";
   };
 
-  const getPriorityText = (tags: string[]) => {
-    if (tags.includes("High") || tags.includes("Priority")) return "High";
-    if (tags.includes("Medium")) return "Medium";
-    return "Normal";
+  const getPrimaryTagText = (tags: string[]) => {
+    // Show the first user tag if present; otherwise fallback to Normal
+    return tags && tags.length > 0 ? tags[0] : "Normal";
   };
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString();
   };
 
-  const filteredDocs = clinicalDocs?.filter(doc =>
+  const allDocs = [
+    ...(clinicalDocs || []),
+    ...localDocs,
+  ];
+
+  const filteredDocs = allDocs.filter(doc =>
     doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     doc.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
-  ) || [];
+  );
 
-  const consultationDocs = clinicalDocs?.filter(doc => doc.category === "Consultation") || [];
-  const labDocs = clinicalDocs?.filter(doc => doc.category === "Lab Report") || [];
-  const assessmentDocs = clinicalDocs?.filter(doc => doc.category === "Assessment") || [];
+  // Map enhanced modal categories to display categories
+  const getDisplayCategory = (category: string) => {
+    switch (category) {
+      case "lab_result": return "Lab Report";
+      case "medical_record": return "Medical Record";
+      case "prescription": return "Prescription";
+      case "insurance": return "Insurance";
+      case "id_document": return "ID Document";
+      case "other": return "Other";
+      default: return category; // Fallback for legacy categories
+    }
+  };
+
+  const consultationDocs = allDocs.filter(doc => 
+    doc.category === "Consultation" || doc.category === "consultation"
+  );
+  const labDocs = allDocs.filter(doc => 
+    doc.category === "Lab Report" || doc.category === "lab_result"
+  );
+  const assessmentDocs = allDocs.filter(doc => 
+    doc.category === "Assessment" || doc.category === "assessment"
+  );
 
   return (
     <div className="min-h-screen bg-background pt-20 pb-20 lg:pb-6">
@@ -271,21 +515,33 @@ const ClinicalDocs = () => {
                 className="pl-10"
               />
             </div>
-            <Button variant="outline" className="sm:w-auto">
+            <Button 
+              variant="outline" 
+              className="sm:w-auto"
+              onClick={() => setIsUploadModalOpen(true)}
+            >
               <Upload className="w-4 h-4 mr-2" />
               Upload Document
             </Button>
+            {/* Enhanced Upload Modal */}
+            <EnhancedClinicalDocsUploadModal
+              isOpen={isUploadModalOpen}
+              onClose={() => setIsUploadModalOpen(false)}
+              onUpload={handleEnhancedUpload}
+              isUploading={isUploading}
+            />
           </div>
         </div>
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="all">All Documents</TabsTrigger>
-            <TabsTrigger value="consultation">Consultations</TabsTrigger>
-            <TabsTrigger value="lab">Lab Reports</TabsTrigger>
-            <TabsTrigger value="assessment">Assessments</TabsTrigger>
-          </TabsList>
+                      <TabsList className="grid w-full grid-cols-5">
+              <TabsTrigger value="all">All Documents</TabsTrigger>
+              <TabsTrigger value="consultation">Consultations</TabsTrigger>
+              <TabsTrigger value="lab">Lab Reports</TabsTrigger>
+              <TabsTrigger value="assessment">Assessments</TabsTrigger>
+              <TabsTrigger value="ai-analysis">AI Analysis</TabsTrigger>
+            </TabsList>
 
           <TabsContent value="all" className="space-y-4">
             {/* Stats Cards */}
@@ -378,35 +634,96 @@ const ClinicalDocs = () => {
                                   <Calendar className="w-3 h-3" />
                                   {formatDate(doc.createdAt)}
                                 </span>
-                                <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
-                                  {doc.category}
-                                </span>
+                                                              <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                                {getDisplayCategory(doc.category)}
+                              </span>
                               </div>
                             </div>
-                            <Badge 
-                              variant={getPriorityColor(doc.tags)}
-                              className="ml-4"
-                            >
-                              {getPriorityText(doc.tags)}
-                            </Badge>
-                          </div>
-
-                          <div className="flex flex-wrap gap-2">
-                            {doc.tags.map((tag, index) => (
-                              <Badge key={index} variant="outline" className="text-xs">
-                                {tag}
+                            <div className="flex items-center gap-2 ml-4">
+                              <Badge 
+                                variant={getPriorityColor(doc.tags)}
+                              >
+                                {getPrimaryTagText(doc.tags)}
                               </Badge>
-                            ))}
+                              <Button variant="ghost" size="sm" onClick={() => openEditModal(doc)}>
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => handleDeleteDocument(doc._id)}>
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 ml-4">
-                          <Button variant="ghost" size="sm" onClick={() => openEditModal(doc)}>
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleDeleteDocument(doc._id)}>
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                          
+                          {/* Document Content */}
+                          <div className="text-sm text-gray-600 mt-2">
+                            {doc.content}
+                          </div>
+                          
+                          {/* PDF Preview for PDF files */}
+                          {doc.attachments && doc.attachments.length > 0 && (
+                            <div className="mt-3">
+                              {doc.attachments.map((attachment, index) => {
+                                // Check if it's a PDF file
+                                const isPDF = typeof attachment === 'string' && 
+                                  (attachment.includes('.pdf') || attachment.includes('application/pdf') || 
+                                   doc.fileType === 'application/pdf' || doc.fileName?.includes('.pdf'));
+                                
+                                if (isPDF) {
+                                  return (
+                                    <div key={index} className="border rounded-lg p-3 bg-gray-50">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-medium text-gray-700">PDF Document</span>
+                                        <a 
+                                          href={attachment} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer"
+                                          className="text-blue-600 hover:text-blue-800 text-sm underline"
+                                        >
+                                          Open PDF
+                                        </a>
+                                      </div>
+                                      {/* PDF Preview */}
+                                      <div className="w-full h-64 bg-white border rounded overflow-hidden">
+                                        <iframe
+                                          src={attachment}
+                                          className="w-full h-full"
+                                          title="PDF Preview"
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                } else {
+                                  // For other file types, show a download link
+                                  return (
+                                    <div key={index} className="mt-2">
+                                                                              <a 
+                                          href={attachment} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer"
+                                          className="text-blue-600 hover:text-blue-800 text-sm underline flex items-center gap-1"
+                                        >
+                                          <FileText className="w-4 h-4" />
+                                          Download Attachment
+                                        </a>
+                                    </div>
+                                  );
+                                }
+                              })}
+                            </div>
+                          )}
+                          
+                          {/* Tags */}
+                          {doc.tags && doc.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {doc.tags.map((tag, index) => (
+                                <span key={index} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          
+                          {/* Removed separate tag chips at bottom as requested */}
                         </div>
                       </div>
                     </CardContent>
@@ -444,17 +761,19 @@ const ClinicalDocs = () => {
                               </span>
                             </div>
                           </div>
-                          <Badge variant={getPriorityColor(doc.tags)}>
-                            {getPriorityText(doc.tags)}
-                          </Badge>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {doc.tags.map((tag, index) => (
-                            <Badge key={index} variant="outline" className="text-xs">
-                              {tag}
+                          <div className="flex items-center gap-2 ml-4">
+                            <Badge variant={getPriorityColor(doc.tags)}>
+                              {getPrimaryTagText(doc.tags)}
                             </Badge>
-                          ))}
+                            <Button variant="ghost" size="sm" onClick={() => openEditModal(doc)}>
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleDeleteDocument(doc._id)}>
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
+                        {/* Removed separate tag chips */}
                       </div>
                       <div className="flex items-center gap-2 ml-4">
                         <Button variant="ghost" size="sm" onClick={() => openEditModal(doc)}>
@@ -499,17 +818,19 @@ const ClinicalDocs = () => {
                               </span>
                             </div>
                           </div>
-                          <Badge variant={getPriorityColor(doc.tags)}>
-                            {getPriorityText(doc.tags)}
-                          </Badge>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {doc.tags.map((tag, index) => (
-                            <Badge key={index} variant="outline" className="text-xs">
-                              {tag}
+                          <div className="flex items-center gap-2 ml-4">
+                            <Badge variant={getPriorityColor(doc.tags)}>
+                              {getPrimaryTagText(doc.tags)}
                             </Badge>
-                          ))}
+                            <Button variant="ghost" size="sm" onClick={() => openEditModal(doc)}>
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleDeleteDocument(doc._id)}>
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
+                        {/* Removed separate tag chips */}
                       </div>
                       <div className="flex items-center gap-2 ml-4">
                         <Button variant="ghost" size="sm" onClick={() => openEditModal(doc)}>
@@ -555,16 +876,81 @@ const ClinicalDocs = () => {
                             </div>
                           </div>
                           <Badge variant={getPriorityColor(doc.tags)}>
-                            {getPriorityText(doc.tags)}
+                            {getPrimaryTagText(doc.tags)}
                           </Badge>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          {doc.tags.map((tag, index) => (
-                            <Badge key={index} variant="outline" className="text-xs">
-                              {tag}
-                            </Badge>
-                          ))}
+                        
+                        {/* Document Content */}
+                        <div className="text-sm text-gray-600 mt-2">
+                          {doc.content}
                         </div>
+                        
+                        {/* PDF Preview for PDF files */}
+                        {doc.attachments && doc.attachments.length > 0 && (
+                          <div className="mt-3">
+                            {console.log('Document attachments:', doc.attachments, 'File type:', doc.fileType, 'File name:', doc.fileName)}
+                            {doc.attachments.map((attachment, index) => {
+                              // Check if it's a PDF file
+                              const isPDF = typeof attachment === 'string' && 
+                                (attachment.includes('.pdf') || attachment.includes('application/pdf') || 
+                                 doc.fileType === 'application/pdf' || doc.fileName?.includes('.pdf'));
+                              
+                              if (isPDF) {
+                                return (
+                                  <div key={index} className="border rounded-lg p-3 bg-gray-50">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <span className="text-sm font-medium text-gray-700">PDF Document</span>
+                                      <a 
+                                        href={attachment} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="text-blue-600 hover:text-blue-800 text-sm underline"
+                                      >
+                                        Open PDF
+                                      </a>
+                                    </div>
+                                    {/* PDF Preview */}
+                                    <div className="w-full h-64 bg-white border rounded overflow-hidden">
+                                      <iframe
+                                        src={attachment}
+                                        className="w-full h-full"
+                                        title="PDF Preview"
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              } else {
+                                // For other file types, show a download link
+                                return (
+                                  <div key={index} className="mt-2">
+                                    <a 
+                                      href={attachment} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 hover:text-blue-800 text-sm underline flex items-center gap-1"
+                                    >
+                                      <FileText className="w-4 h-4" />
+                                      Download Attachment
+                                    </a>
+                                  </div>
+                                );
+                              }
+                            })}
+                          </div>
+                        )}
+                        
+                        {/* Tags */}
+                        {doc.tags && doc.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {doc.tags.map((tag, index) => (
+                              <span key={index} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        
+                        {/* Removed separate tag chips */}
                       </div>
                       <div className="flex items-center gap-2 ml-4">
                         <Button variant="ghost" size="sm" onClick={() => openEditModal(doc)}>
@@ -580,8 +966,76 @@ const ClinicalDocs = () => {
               ))
             )}
           </TabsContent>
+
+          {/* AI Analysis Tab */}
+          <TabsContent value="ai-analysis" className="space-y-4">
+            <div className="text-center py-12">
+              <Brain className="w-16 h-16 mx-auto text-blue-600 mb-4" />
+              <h3 className="text-2xl font-bold text-gray-900 mb-4">AI-Powered PDF Analysis</h3>
+              <p className="text-gray-600 mb-6 max-w-2xl mx-auto">
+                Upload any PDF document and let our AI analyze it for you. Get instant summaries, 
+                key points, and insights from your clinical documents.
+              </p>
+              
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setSelectedFileForAI(file);
+                        setIsAIAnalysisModalOpen(true);
+                      }
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    id="ai-pdf-upload"
+                  />
+                  <Button 
+                    asChild
+                    size="lg"
+                    className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-3"
+                  >
+                    <label htmlFor="ai-pdf-upload">
+                      <Brain className="w-5 h-5 mr-2" />
+                      Upload & Analyze PDF
+                    </label>
+                  </Button>
+                </div>
+                
+                <Button 
+                  variant="outline"
+                  size="lg"
+                  className="px-8 py-3"
+                  onClick={() => setActiveTab("all")}
+                >
+                  <FileText className="w-5 h-5 mr-2" />
+                  View All Documents
+                </Button>
+              </div>
+            </div>
+          </TabsContent>
         </Tabs>
       </div>
+
+      {/* AI Analysis Modal */}
+      <Dialog open={isAIAnalysisModalOpen} onOpenChange={setIsAIAnalysisModalOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Brain className="w-5 h-5 text-blue-600" />
+              AI PDF Analysis
+            </DialogTitle>
+          </DialogHeader>
+          <AIPDFReader 
+            file={selectedFileForAI}
+            onAnalysisComplete={(result) => {
+              console.log('AI Analysis completed:', result);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Document Modal */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
@@ -655,10 +1109,18 @@ const ClinicalDocs = () => {
               <Label htmlFor="edit-isPrivate">Private document</Label>
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>
+              <Button variant="outline" onClick={() => {
+                console.log("Cancel button clicked");
+                setIsEditModalOpen(false);
+                setEditingDoc(null);
+                resetForm();
+              }}>
                 Cancel
               </Button>
-              <Button onClick={handleEditDocument}>
+              <Button onClick={() => {
+                console.log("Update button clicked");
+                handleEditDocument();
+              }}>
                 Update Document
               </Button>
             </div>
