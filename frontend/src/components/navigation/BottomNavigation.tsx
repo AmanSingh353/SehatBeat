@@ -21,8 +21,11 @@ const bottomNavItems = [
 
 export const BottomNavigation = () => {
   const location = useLocation();
-  const { isSignedIn } = useAuth();
+  // Safe auth wrapper (avoid crashing when Clerk isn't configured)
+  const IS_CLERK_CONFIGURED = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY && import.meta.env.VITE_CLERK_PUBLISHABLE_KEY !== 'pk_test_demo_key_for_development';
+  const { isSignedIn } = IS_CLERK_CONFIGURED ? useAuth() : ({ isSignedIn: false } as { isSignedIn: boolean });
   const { cartItems } = useCart();
+  
   const isActive = (path: string) => location.pathname === path;
   
   const getCartItemCount = () => {

@@ -32,13 +32,15 @@ interface AIChatbotProps {
   onClose: () => void;
   initialBodyPart?: string;
   initialSymptoms?: string[];
+  onChatComplete?: (userQuery: string, aiResponse: string, symptoms: string[], severity: string) => void;
 }
 
 const AIChatbot: React.FC<AIChatbotProps> = ({ 
   isOpen, 
   onClose, 
   initialBodyPart, 
-  initialSymptoms 
+  initialSymptoms,
+  onChatComplete
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -159,6 +161,16 @@ Please note: I provide informational guidance only and cannot replace profession
 
     setMessages(prev => [...prev, botMessage]);
     setChatHistory(prev => [...prev, botMessage]);
+    
+    // Call the callback to save chat history for audit log
+    if (onChatComplete) {
+      // Extract symptoms from the user message and AI response
+      const extractedSymptoms = extractSymptomsFromMessage(userMessage);
+      const severity = assessSeverity(userMessage, aiResponse);
+      
+      onChatComplete(userMessage, aiResponse, extractedSymptoms, severity);
+    }
+    
     setIsTyping(false);
   };
 
@@ -570,6 +582,57 @@ Remember, while I can provide information and guidance, I cannot diagnose medica
       </Card>
     </div>
   );
+};
+
+// Helper functions for chat history
+const extractSymptomsFromMessage = (message: string): string[] => {
+  const commonSymptoms = [
+    'headache', 'fever', 'cough', 'sore throat', 'fatigue', 'nausea', 'dizziness',
+    'chest pain', 'back pain', 'joint pain', 'abdominal pain', 'shortness of breath',
+    'migraine', 'stomach ache', 'vomiting', 'diarrhea', 'constipation', 'insomnia',
+    'anxiety', 'depression', 'rash', 'itching', 'swelling', 'numbness', 'weakness'
+  ];
+  
+  const lowerMessage = message.toLowerCase();
+  const foundSymptoms = commonSymptoms.filter(symptom => 
+    lowerMessage.includes(symptom)
+  );
+  
+  // If no common symptoms found, try to extract from the message
+  if (foundSymptoms.length === 0) {
+    // Look for pain-related words
+    if (lowerMessage.includes('pain') || lowerMessage.includes('hurt') || lowerMessage.includes('ache')) {
+      foundSymptoms.push('Pain');
+    }
+    if (lowerMessage.includes('tired') || lowerMessage.includes('exhausted')) {
+      foundSymptoms.push('Fatigue');
+    }
+  }
+  
+  return foundSymptoms.length > 0 ? foundSymptoms : ['General symptoms'];
+};
+
+const assessSeverity = (userMessage: string, aiResponse: string): string => {
+  const lowerMessage = userMessage.toLowerCase();
+  const lowerResponse = aiResponse.toLowerCase();
+  
+  // High severity indicators
+  if (lowerMessage.includes('severe') || lowerMessage.includes('emergency') || 
+      lowerMessage.includes('911') || lowerMessage.includes('heart attack') ||
+      lowerResponse.includes('emergency') || lowerResponse.includes('911') ||
+      lowerResponse.includes('immediately')) {
+    return 'High';
+  }
+  
+  // Medium severity indicators
+  if (lowerMessage.includes('moderate') || lowerMessage.includes('persistent') ||
+      lowerMessage.includes('worse') || lowerMessage.includes('chronic') ||
+      lowerResponse.includes('seek medical') || lowerResponse.includes('consult')) {
+    return 'Medium';
+  }
+  
+  // Default to low severity
+  return 'Low';
 };
 
 export default AIChatbot;

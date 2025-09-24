@@ -30,6 +30,15 @@ const isClerkAvailable = () => {
   }
 };
 
+// Use a safe auth wrapper to avoid crashing when Clerk isn't configured
+const IS_CLERK_CONFIGURED = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY && import.meta.env.VITE_CLERK_PUBLISHABLE_KEY !== 'pk_test_demo_key_for_development';
+const useSafeAuth = () => {
+  if (!IS_CLERK_CONFIGURED) {
+    return { isSignedIn: false } as { isSignedIn: boolean };
+  }
+  return useAuth();
+};
+
 // Fallback components when Clerk is not available
 const FallbackSignInButton = ({ children }: { children: React.ReactNode }) => (
   <Button size="sm" className="bg-gradient-primary text-primary-foreground shadow-medium hover:shadow-strong">
@@ -49,7 +58,7 @@ const navigationItems = [
 export const TopNavigation = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
-  const { isSignedIn } = useAuth();
+  const { isSignedIn } = useSafeAuth();
   const { cartItems } = useCart();
 
   const isActive = (path: string) => location.pathname === path;

@@ -1,55 +1,64 @@
 import { useQuery, useMutation } from "convex/react";
 import { useAuth } from "@clerk/clerk-react";
 
+// Global flags and safe auth wrapper
+const IS_CLERK_CONFIGURED = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY && import.meta.env.VITE_CLERK_PUBLISHABLE_KEY !== 'pk_test_demo_key_for_development';
+const ENABLE_CONVEX = import.meta.env.VITE_ENABLE_CONVEX === 'true';
+const useSafeAuth = () => {
+  if (!IS_CLERK_CONFIGURED) {
+    return { userId: undefined } as { userId: string | undefined };
+  }
+  return useAuth();
+};
+
+// Thin helpers to bypass strict Convex types while using string identifiers
+const useConvexQuery = (name: string, args: any) => (useQuery as unknown as (n: string, a: any) => any)(name, args);
+const useConvexMutation = (name: string) => (useMutation as unknown as (n: string) => any)(name);
+
 // Custom hook for getting current user
 export const useCurrentUser = () => {
-  const { userId } = useAuth();
-  
+  const { userId } = useSafeAuth();
+  // If Convex is disabled, return undefined to indicate no remote user
+  if (!ENABLE_CONVEX) return undefined as any;
   // Temporary fix: Use test user if no Clerk userId
   const testUserId = userId || "test-user-123";
-  
-  const user = useQuery("myFunctions:getUserProfile", 
-    testUserId ? { clerkId: testUserId } : "skip"
-  );
-  
-  return user;
+  const user = useConvexQuery("myFunctions:getUserProfile", testUserId ? { clerkId: testUserId } : "skip");
+  return user as any;
 };
 
 // Custom hook for medicines
 export const useMedicines = (category?: string, search?: string) => {
-  return useQuery("myFunctions:getMedicines", { category, search });
+  if (!ENABLE_CONVEX) return undefined as any;
+  return useConvexQuery("myFunctions:getMedicines", { category, search });
 };
 
 // Custom hook for cart
 export const useCart = () => {
-  const { userId } = useAuth();
+  const { userId } = useSafeAuth();
   const user = useCurrentUser();
-  
   // Temporary fix: Use test user ID if no authenticated user
-  const effectiveUserId = user?._id || "kd76tt2k295wp3r6r46r6acxv17pqxy0";
-  
+  const effectiveUserId = (user as any)?._id || "kd76tt2k295wp3r6r46r6acxv17pqxy0";
   console.log("useCart Debug:", { userId, user, effectiveUserId });
-  
-  const cartItems = useQuery(
-    "myFunctions:getCartItems",
-    effectiveUserId ? { userId: effectiveUserId } : "skip"
-  );
-  
-  const addToCart = useMutation("myFunctions:addToCart");
-  const updateCartItem = useMutation("myFunctions:updateCartItem");
-  const removeFromCart = useMutation("myFunctions:removeFromCart");
-  
+  const cartItems = ENABLE_CONVEX
+    ? useConvexQuery("myFunctions:getCartItems", effectiveUserId ? { userId: effectiveUserId } : "skip")
+    : undefined;
+  const addToCart = ENABLE_CONVEX ? useConvexMutation("myFunctions:addToCart") : null as any;
+  const updateCartItem = ENABLE_CONVEX ? useConvexMutation("myFunctions:updateCartItem") : null as any;
+  const removeFromCart = ENABLE_CONVEX ? useConvexMutation("myFunctions:removeFromCart") : null as any;
+
   const addItemToCart = async (medicineId: string, quantity: number) => {
-    if (!effectiveUserId) return;
-    await addToCart({ userId: effectiveUserId, medicineId: medicineId as Id<"medicines">, quantity });
+    if (!ENABLE_CONVEX || !effectiveUserId || !addToCart) return;
+    await addToCart({ userId: effectiveUserId, medicineId, quantity } as any);
   };
   
   const updateItemQuantity = async (cartItemId: string, quantity: number) => {
-    await updateCartItem({ cartItemId: cartItemId as Id<"cartItems">, quantity });
+    if (!ENABLE_CONVEX || !updateCartItem) return;
+    await updateCartItem({ cartItemId, quantity } as any);
   };
   
   const removeItemFromCart = async (cartItemId: string) => {
-    await removeFromCart({ cartItemId: cartItemId as Id<"cartItems"> });
+    if (!ENABLE_CONVEX || !removeFromCart) return;
+    await removeFromCart({ cartItemId } as any);
   };
   
   return {
@@ -64,17 +73,14 @@ export const useCart = () => {
 
 // Custom hook for reminders
 export const useReminders = (activeOnly = true) => {
-  const { userId } = useAuth();
+  const { userId } = useSafeAuth();
   const user = useCurrentUser();
-  
-  const reminders = useQuery(
-    "myFunctions:getReminders",
-    user?._id ? { userId: user._id, activeOnly } : "skip"
-  );
-  
-  const createReminder = useMutation("myFunctions:createReminder");
-  const updateReminder = useMutation("myFunctions:updateReminder");
-  const deleteReminder = useMutation("myFunctions:deleteReminder");
+  const reminders = ENABLE_CONVEX
+    ? useConvexQuery("myFunctions:getReminders", user?._id ? { userId: user._id, activeOnly } : "skip")
+    : undefined;
+  const createReminder = ENABLE_CONVEX ? useConvexMutation("myFunctions:createReminder") : null as any;
+  const updateReminder = ENABLE_CONVEX ? useConvexMutation("myFunctions:updateReminder") : null as any;
+  const deleteReminder = ENABLE_CONVEX ? useConvexMutation("myFunctions:deleteReminder") : null as any;
   
   const addReminder = async (reminderData: {
     type: "medication" | "appointment" | "lab_test";
@@ -87,15 +93,17 @@ export const useReminders = (activeOnly = true) => {
     doctorId?: string;
     labTestId?: string;
   }) => {
-    if (!user?._id) return;
+    if (!ENABLE_CONVEX || !user?._id || !createReminder) return;
     await createReminder({ userId: user._id, ...reminderData });
   };
   
   const updateReminderItem = async (reminderId: string, updates: any) => {
+    if (!ENABLE_CONVEX || !updateReminder) return;
     await updateReminder({ reminderId, updates });
   };
   
   const deleteReminderItem = async (reminderId: string) => {
+    if (!ENABLE_CONVEX || !deleteReminder) return;
     await deleteReminder({ reminderId });
   };
   
@@ -109,16 +117,13 @@ export const useReminders = (activeOnly = true) => {
 
 // Custom hook for lab tests
 export const useLabTests = () => {
-  const { userId } = useAuth();
+  const { userId } = useSafeAuth();
   const user = useCurrentUser();
-  
-  const labTests = useQuery(
-    "myFunctions:getLabTests",
-    user?._id ? { userId: user._id } : "skip"
-  );
-  
-  const createLabTest = useMutation("myFunctions:createLabTest");
-  const updateLabTest = useMutation("myFunctions:updateLabTest");
+  const labTests = ENABLE_CONVEX
+    ? useConvexQuery("myFunctions:getLabTests", user?._id ? { userId: user._id } : "skip")
+    : undefined;
+  const createLabTest = ENABLE_CONVEX ? useConvexMutation("myFunctions:createLabTest") : null as any;
+  const updateLabTest = ENABLE_CONVEX ? useConvexMutation("myFunctions:updateLabTest") : null as any;
   
   const addLabTest = async (labTestData: {
     testName: string;
@@ -129,11 +134,12 @@ export const useLabTests = () => {
     fastingRequired?: boolean;
     instructions?: string;
   }) => {
-    if (!user?._id) return;
+    if (!ENABLE_CONVEX || !user?._id || !createLabTest) return;
     await createLabTest({ userId: user._id, ...labTestData });
   };
   
   const updateLabTestItem = async (labTestId: string, updates: any) => {
+    if (!ENABLE_CONVEX || !updateLabTest) return;
     await updateLabTest({ labTestId, updates });
   };
   
@@ -146,36 +152,31 @@ export const useLabTests = () => {
 
 // Custom hook for doctors
 export const useDoctors = (specialization?: string, location?: string) => {
-  return useQuery("myFunctions:getDoctors", { specialization, location });
+  if (!ENABLE_CONVEX) return undefined as any;
+  return useConvexQuery("myFunctions:getDoctors", { specialization, location });
 };
 
 // Custom hook for clinical documents
 export const useClinicalDocs = () => {
-  const { userId } = useAuth();
+  const { userId } = useSafeAuth();
   const user = useCurrentUser();
   
   console.log("useClinicalDocs - userId:", userId);
   console.log("useClinicalDocs - user:", user);
   console.log("useClinicalDocs - user?._id:", user?._id);
   
-  const clinicalDocs = useQuery(
-    "myFunctions:getClinicalDocs",
-    user?._id ? { userId: user._id } : "skip"
-  );
-  
-  const clinicalDocsStats = useQuery(
-    "myFunctions:getClinicalDocStats",
-    user?._id ? { userId: user._id } : "skip"
-  );
-  
-  const getClinicalDocById = useQuery(
-    "myFunctions:getClinicalDocById",
-    "skip"
-  );
-  
-  const createClinicalDoc = useMutation("myFunctions:createClinicalDoc");
-  const updateClinicalDoc = useMutation("myFunctions:updateClinicalDoc");
-  const deleteClinicalDoc = useMutation("myFunctions:deleteClinicalDoc");
+  const clinicalDocs = ENABLE_CONVEX
+    ? useConvexQuery("myFunctions:getClinicalDocs", user?._id ? { userId: user._id } : "skip")
+    : undefined;
+  const clinicalDocsStats = ENABLE_CONVEX
+    ? useConvexQuery("myFunctions:getClinicalDocStats", user?._id ? { userId: user._id } : "skip")
+    : undefined;
+  const getClinicalDocById = ENABLE_CONVEX
+    ? useConvexQuery("myFunctions:getClinicalDocById", "skip")
+    : undefined;
+  const createClinicalDoc = ENABLE_CONVEX ? useConvexMutation("myFunctions:createClinicalDoc") : null as any;
+  const updateClinicalDoc = ENABLE_CONVEX ? useConvexMutation("myFunctions:updateClinicalDoc") : null as any;
+  const deleteClinicalDoc = ENABLE_CONVEX ? useConvexMutation("myFunctions:deleteClinicalDoc") : null as any;
   
   const addClinicalDoc = async (docData: {
     title: string;
@@ -189,7 +190,7 @@ export const useClinicalDocs = () => {
     console.log("addClinicalDoc called with:", docData);
     console.log("Current user ID:", user?._id);
     
-    if (!user?._id) {
+    if (!ENABLE_CONVEX || !user?._id || !createClinicalDoc) {
       console.error("Cannot create clinical document: User not authenticated or loaded");
       throw new Error("User not authenticated. Please log in to create clinical documents.");
     }
@@ -215,6 +216,7 @@ export const useClinicalDocs = () => {
       }
       
       // For remote documents, call the Convex mutation
+      if (!ENABLE_CONVEX || !updateClinicalDoc) return;
       await updateClinicalDoc({ docId, updates });
     } catch (error) {
       console.error("Error updating clinical document:", error);
@@ -232,6 +234,7 @@ export const useClinicalDocs = () => {
       }
       
       // For remote documents, call the Convex mutation
+      if (!ENABLE_CONVEX || !deleteClinicalDoc) return;
       await deleteClinicalDoc({ docId });
     } catch (error) {
       console.error("Error deleting clinical document:", error);
@@ -252,24 +255,21 @@ export const useClinicalDocs = () => {
 
 // Custom hook for AI conversations
 export const useConversation = () => {
-  const { userId } = useAuth();
+  const { userId } = useSafeAuth();
   const user = useCurrentUser();
-  
-  const conversation = useQuery(
-    "myFunctions:getConversation",
-    user?._id ? { userId: user._id } : "skip"
-  );
-  
-  const createConversation = useMutation("myFunctions:createConversation");
-  const addMessage = useMutation("myFunctions:addMessage");
+  const conversation = ENABLE_CONVEX
+    ? useConvexQuery("myFunctions:getConversation", user?._id ? { userId: user._id } : "skip")
+    : undefined;
+  const createConversation = ENABLE_CONVEX ? useConvexMutation("myFunctions:createConversation") : null as any;
+  const addMessage = ENABLE_CONVEX ? useConvexMutation("myFunctions:addMessage") : null as any;
   
   const startConversation = async () => {
-    if (!user?._id) return;
+    if (!ENABLE_CONVEX || !user?._id || !createConversation) return;
     await createConversation({ userId: user._id });
   };
   
   const sendMessage = async (content: string, metadata?: any) => {
-    if (!conversation?._id) return;
+    if (!ENABLE_CONVEX || !conversation?._id || !addMessage) return;
     await addMessage({
       conversationId: conversation._id,
       role: "user",
@@ -287,16 +287,13 @@ export const useConversation = () => {
 
 // Custom hook for appointments
 export const useAppointments = () => {
-  const { userId } = useAuth();
+  const { userId } = useSafeAuth();
   const user = useCurrentUser();
-  
-  const appointments = useQuery(
-    "myFunctions:getAppointments",
-    user?._id ? { userId: user._id } : "skip"
-  );
-  
-  const createAppointment = useMutation("myFunctions:createAppointment");
-  const updateAppointment = useMutation("myFunctions:updateAppointment");
+  const appointments = ENABLE_CONVEX
+    ? useConvexQuery("myFunctions:getAppointments", user?._id ? { userId: user._id } : "skip")
+    : undefined;
+  const createAppointment = ENABLE_CONVEX ? useConvexMutation("myFunctions:createAppointment") : null as any;
+  const updateAppointment = ENABLE_CONVEX ? useConvexMutation("myFunctions:updateAppointment") : null as any;
   
   const bookAppointment = async (appointmentData: {
     doctorId: string;
@@ -305,11 +302,12 @@ export const useAppointments = () => {
     notes?: string;
     symptoms?: string[];
   }) => {
-    if (!user?._id) return;
+    if (!ENABLE_CONVEX || !user?._id || !createAppointment) return;
     await createAppointment({ userId: user._id, ...appointmentData });
   };
   
   const updateAppointmentItem = async (appointmentId: string, updates: any) => {
+    if (!ENABLE_CONVEX || !updateAppointment) return;
     await updateAppointment({ appointmentId, updates });
   };
   
@@ -322,15 +320,12 @@ export const useAppointments = () => {
 
 // Custom hook for orders
 export const useOrders = () => {
-  const { userId } = useAuth();
+  const { userId } = useSafeAuth();
   const user = useCurrentUser();
-  
-  const orders = useQuery(
-    "myFunctions:getOrders",
-    user?._id ? { userId: user._id } : "skip"
-  );
-  
-  const createOrder = useMutation("myFunctions:createOrder");
+  const orders = ENABLE_CONVEX
+    ? useConvexQuery("myFunctions:getOrders", user?._id ? { userId: user._id } : "skip")
+    : undefined;
+  const createOrder = ENABLE_CONVEX ? useConvexMutation("myFunctions:createOrder") : null as any;
   
   const placeOrder = async (orderData: {
     items: Array<{
@@ -346,7 +341,7 @@ export const useOrders = () => {
       country: string;
     };
   }) => {
-    if (!user?._id) return;
+    if (!ENABLE_CONVEX || !user?._id || !createOrder) return;
     await createOrder({ userId: user._id, ...orderData });
   };
   

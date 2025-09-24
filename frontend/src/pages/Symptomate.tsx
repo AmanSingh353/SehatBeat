@@ -24,20 +24,7 @@ const commonSymptoms = [
   "Nausea", "Dizziness", "Chest pain", "Back pain", "Joint pain"
 ];
 
-const recentChecks = [
-  {
-    symptoms: ["Headache", "Dizziness"],
-    result: "Tension headache",
-    severity: "Low",
-    date: "2024-01-15"
-  },
-  {
-    symptoms: ["Cough", "Fever"],
-    result: "Upper respiratory infection",
-    severity: "Medium",
-    date: "2024-01-10"
-  }
-];
+
 
 const Symptomate = () => {
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
@@ -45,6 +32,26 @@ const Symptomate = () => {
   const [additionalInfo, setAdditionalInfo] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isAIChatOpen, setIsAIChatOpen] = useState(false);
+  const [chatHistory, setChatHistory] = useState([
+    {
+      id: 1,
+      userQuery: "I have a headache and feeling dizzy",
+      aiResponse: "Based on your symptoms, this appears to be a tension headache. Rest in a quiet, dark room and stay hydrated.",
+      symptoms: ["Headache", "Dizziness"],
+      severity: "Low",
+      timestamp: "2024-01-15 14:30",
+      date: "2024-01-15"
+    },
+    {
+      id: 2,
+      userQuery: "Coughing with fever for 2 days",
+      aiResponse: "Your symptoms suggest an upper respiratory infection. Monitor your temperature and consider over-the-counter remedies.",
+      symptoms: ["Cough", "Fever"],
+      severity: "Medium",
+      timestamp: "2024-01-10 09:15",
+      date: "2024-01-10"
+    }
+  ]);
 
   const toggleSymptom = (symptom: string) => {
     setSelectedSymptoms(prev =>
@@ -67,6 +74,19 @@ const Symptomate = () => {
     }, 3000);
   };
 
+  const addChatEntry = (userQuery: string, aiResponse: string, symptoms: string[], severity: string) => {
+    const newEntry = {
+      id: Date.now(),
+      userQuery,
+      aiResponse,
+      symptoms,
+      severity,
+      timestamp: new Date().toLocaleString(),
+      date: new Date().toLocaleDateString()
+    };
+    setChatHistory(prev => [newEntry, ...prev.slice(0, 4)]); // Keep only last 5 entries
+  };
+
   return (
     <div className="min-h-screen bg-background pt-20 pb-20 lg:pb-6">
       <div className="container mx-auto px-4 py-8">
@@ -81,17 +101,19 @@ const Symptomate = () => {
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             AI-powered symptom checker with interactive 3D body mapping for accurate health assessments
           </p>
-          <Badge className="mt-4 bg-secondary text-secondary-foreground">
-            95% Accuracy Rate
-          </Badge>
-          
-          <Button
-            onClick={() => setIsAIChatOpen(true)}
-            className="mt-4 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-medium"
-          >
-            <MessageCircle className="w-4 h-4 mr-2" />
-            Chat with AI Health Assistant
-          </Button>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-6">
+            <Badge className="bg-secondary text-secondary-foreground px-4 py-2 text-base">
+              95% Accuracy Rate
+            </Badge>
+            
+            <Button
+              onClick={() => setIsAIChatOpen(true)}
+              className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-medium px-6 py-2"
+            >
+              <MessageCircle className="w-4 h-4 mr-2" />
+              Chat with AI Health Assistant
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -178,39 +200,50 @@ const Symptomate = () => {
               </CardContent>
             </Card>
 
-            {/* Recent Checks */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-secondary" />
-                  Recent Symptom Checks
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {recentChecks.map((check, index) => (
-                  <div key={index} className="flex items-start justify-between p-3 bg-muted/50 rounded-lg">
-                    <div className="flex-1">
-                      <div className="flex flex-wrap gap-1 mb-2">
-                        {check.symptoms.map((symptom, i) => (
-                          <Badge key={i} variant="outline" className="text-xs">
-                            {symptom}
-                          </Badge>
-                        ))}
-                      </div>
-                      <p className="text-sm font-medium text-foreground">{check.result}</p>
-                      <p className="text-xs text-muted-foreground">{check.date}</p>
-                    </div>
-                    <Badge
-                      variant={check.severity === "Low" ? "secondary" : 
-                               check.severity === "Medium" ? "default" : "destructive"}
-                      className="ml-2"
+                         {/* Recent Checks */}
+             <Card>
+               <CardHeader>
+                 <CardTitle className="flex items-center gap-2">
+                   <Clock className="w-5 h-5 text-secondary" />
+                   AI Chat History
+                 </CardTitle>
+               </CardHeader>
+               <CardContent className="space-y-3">
+                                   {chatHistory.map((chat, index) => (
+                    <div 
+                      key={chat.id} 
+                      className="flex items-start justify-between p-3 bg-muted/50 rounded-lg"
                     >
-                      {check.severity}
-                    </Badge>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+                     <div className="flex-1">
+                       <div className="flex flex-wrap gap-1 mb-2">
+                         {chat.symptoms.map((symptom, i) => (
+                           <Badge key={i} variant="outline" className="text-xs">
+                             {symptom}
+                           </Badge>
+                         ))}
+                       </div>
+                       <p className="text-sm font-medium text-foreground mb-1">
+                         <span className="text-muted-foreground">Q:</span> {chat.userQuery.length > 50 ? chat.userQuery.substring(0, 50) + '...' : chat.userQuery}
+                       </p>
+                       <p className="text-xs text-muted-foreground mb-1">
+                         <span className="text-muted-foreground">A:</span> {chat.aiResponse.length > 60 ? chat.aiResponse.substring(0, 60) + '...' : chat.aiResponse}
+                       </p>
+                       <p className="text-xs text-muted-foreground">{chat.timestamp}</p>
+                     </div>
+                                           <Badge
+                        variant={chat.severity === "Low" ? "secondary" : 
+                                 chat.severity === "Medium" ? "default" : "destructive"}
+                        className="ml-2"
+                      >
+                        {chat.severity}
+                      </Badge>
+                   </div>
+                 ))}
+                                   <p className="text-xs text-muted-foreground text-center italic">
+                    Your AI chat history and symptom analysis
+                  </p>
+               </CardContent>
+             </Card>
           </div>
 
           {/* Right Column - Health Information */}
@@ -264,11 +297,12 @@ const Symptomate = () => {
                  </div>
        </div>
 
-       {/* AI Chatbot */}
-       <AIChatbot
-         isOpen={isAIChatOpen}
-         onClose={() => setIsAIChatOpen(false)}
-       />
+               {/* AI Chatbot */}
+        <AIChatbot
+          isOpen={isAIChatOpen}
+          onClose={() => setIsAIChatOpen(false)}
+          onChatComplete={addChatEntry}
+        />
      </div>
    );
  };

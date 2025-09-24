@@ -19,7 +19,6 @@ import {
   Info
 } from "lucide-react";
 import { useMutation, useQuery } from "convex/react";
-import { api } from "../../lib/convex";
 import { useCurrentUser } from "../../hooks/useConvex";
 import { useToast } from "../../hooks/use-toast";
 
@@ -86,16 +85,25 @@ export const AIAssistant = () => {
   `;
   
   const currentUser = useCurrentUser();
+  // Feature flag: disable Convex in development unless explicitly enabled
+  const ENABLE_CONVEX = import.meta.env.VITE_ENABLE_CONVEX === 'true';
   const { toast } = useToast();
   
-  // Get user's conversation history
-  const conversation = useQuery(api.myFunctions.getConversation, 
-    currentUser?._id ? { userId: currentUser._id } : "skip"
-  );
+  // Get user's conversation history only if Convex is enabled
+  const conversation = ENABLE_CONVEX && currentUser?._id
+    ? (useQuery as unknown as (name: string, args: any) => any)(
+        "myFunctions:getConversation",
+        { userId: currentUser._id }
+      )
+    : undefined;
   
-  // Convex mutations for AI functionality
-  const analyzeSymptoms = useMutation(api.myFunctions.analyzeSymptoms);
-  const createConversation = useMutation(api.myFunctions.createConversation);
+  // Convex mutations for AI functionality (only when enabled)
+  const analyzeSymptoms = ENABLE_CONVEX
+    ? (useMutation as unknown as (name: string) => any)("myFunctions:analyzeSymptoms")
+    : null;
+  const createConversation = ENABLE_CONVEX
+    ? (useMutation as unknown as (name: string) => any)("myFunctions:createConversation")
+    : null;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -174,9 +182,10 @@ ${(lastMessage.metadata.recommendations || ["Consult a healthcare professional"]
     setInputMessage("");
     setIsTyping(true);
 
+    let analysisMessage: Message | null = null;
     try {
       // Add a temporary message indicating analysis is in progress
-      const analysisMessage: Message = {
+      analysisMessage = {
         id: (Date.now() + 1).toString(),
         type: 'bot',
         content: `🔍 **Analyzing your symptoms with Perplexity AI...**
@@ -186,8 +195,8 @@ Please wait while I process your request. This may take a few seconds.`,
       };
       setMessages(prev => [...prev, analysisMessage]);
 
-      // Try to use Convex to analyze symptoms if user is authenticated
-      if (currentUser?._id) {
+      // Try to use Convex to analyze symptoms if enabled and user is loaded
+      if (ENABLE_CONVEX && currentUser?._id && analyzeSymptoms) {
         try {
           const result = await analyzeSymptoms({
             symptoms: inputMessage,
@@ -239,14 +248,16 @@ Your symptoms are being analyzed by our AI. The response will appear shortly.`,
           console.error('Convex Error:', convexError);
           
           // Remove the temporary analysis message
-          setMessages(prev => prev.filter(msg => msg.id !== analysisMessage.id));
+          if (analysisMessage) {
+            setMessages(prev => prev.filter(msg => msg.id !== analysisMessage!.id));
+          }
           
           // Fallback to local AI analysis
-          await performLocalAIAnalysis(inputMessage, analysisMessage.id);
+          await performLocalAIAnalysis(inputMessage, analysisMessage ? analysisMessage.id : null);
         }
       } else {
         // No user ID, use local AI analysis instead
-        await performLocalAIAnalysis(inputMessage, analysisMessage.id);
+        await performLocalAIAnalysis(inputMessage, analysisMessage ? analysisMessage.id : null);
       }
       
       setIsTyping(false);
@@ -255,7 +266,9 @@ Your symptoms are being analyzed by our AI. The response will appear shortly.`,
       console.error('Error analyzing symptoms:', error);
       
       // Remove the temporary analysis message
-      setMessages(prev => prev.filter(msg => msg.id !== analysisMessage.id));
+      if (analysisMessage) {
+        setMessages(prev => prev.filter(msg => msg.id !== analysisMessage!.id));
+      }
       
       // Fallback to local AI analysis
       await performLocalAIAnalysis(inputMessage, null);

@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Heart, X, AlertTriangle, Info, Stethoscope, User } from 'lucide-react';
+import { Heart, X, AlertTriangle, Info, Stethoscope, User, Lock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -152,14 +152,15 @@ const SymptomModal: React.FC<SymptomModalProps> = ({ bodyPart, onClose, onCheckS
               <Stethoscope className="h-4 w-4 mr-2" />
               Check Symptoms
             </Button>
-            <Button 
-              onClick={handleFindDoctor}
-              variant="outline"
-              className="flex-1"
-            >
-              <User className="h-4 w-4 mr-2" />
-              Find Doctor
-            </Button>
+                         <Button 
+               onClick={handleFindDoctor}
+               variant="outline"
+               className="flex-1"
+               disabled
+             >
+               <Lock className="h-4 w-4 mr-2" />
+               Find Doctor
+             </Button>
           </div>
         </CardContent>
       </Card>
@@ -324,8 +325,8 @@ const InteractiveBodyMap3D: React.FC = () => {
     controls.maxPolarAngle = Math.PI / 2;
     controls.minDistance = 5;
     controls.maxDistance = 30;
-    controls.enablePan = true;
-    controls.enableZoom = true;
+    controls.enablePan = false; // Disable panning (removes arrow controls)
+    controls.enableZoom = false; // Disable zooming (removes scroll controls)
 
     // Create body parts
     const bodyPartMeshes: { [key: string]: THREE.Mesh } = {};
@@ -356,14 +357,14 @@ const InteractiveBodyMap3D: React.FC = () => {
           geometry = new THREE.BoxGeometry(1, 1, 1); // Fallback
       }
 
-      // Revert to simple, solid color materials as per the image
+      // Enhanced materials with better hover effects
       const material = new THREE.MeshStandardMaterial({
         color: new THREE.Color(part.color), // Use the color defined in bodyParts
         transparent: true,
-        opacity: 1.0, // Fully opaque
-        roughness: 0.5, // Default roughness
-        metalness: 0.0, // No metalness
-        envMapIntensity: 0 // No environment reflection
+        opacity: 0.9, // Slightly transparent by default
+        roughness: 0.3, // Less rough for better shine
+        metalness: 0.1, // Slight metallic effect
+        envMapIntensity: 0.2 // Subtle environment reflection
       });
 
       const mesh = new THREE.Mesh(geometry, material);
@@ -409,10 +410,19 @@ const InteractiveBodyMap3D: React.FC = () => {
       raycaster.setFromCamera(mouse, camera);
       const intersects = raycaster.intersectObjects(Object.values(bodyPartMeshes));
 
-      // Reset all materials
-      Object.values(bodyPartMaterials).forEach(material => {
+      // Reset all materials and scales
+      Object.values(bodyPartMeshes).forEach((mesh, index) => {
+        const material = bodyPartMaterials[Object.keys(bodyPartMeshes)[index]];
         material.opacity = 0.8;
         material.emissive.setHex(0x000000);
+        // Reset scale to original
+        mesh.scale.set(1, 1, 1);
+        // Reset position to original
+        const partId = Object.keys(bodyPartMeshes)[index];
+        const originalPart = bodyParts.find(p => p.id === partId);
+        if (originalPart) {
+          mesh.position.set(...originalPart.position);
+        }
       });
 
       if (intersects.length > 0) {
@@ -420,8 +430,20 @@ const InteractiveBodyMap3D: React.FC = () => {
         const bodyPartId = intersectedMesh.userData.bodyPartId;
         const material = bodyPartMaterials[bodyPartId];
         
+        // Enhanced hover effects
         material.opacity = 1.0;
-        material.emissive.setHex(0x333333);
+        material.emissive.setHex(0x666666); // Brighter glow
+        
+        // Make the body part pop out by scaling and moving it forward
+        intersectedMesh.scale.set(1.2, 1.2, 1.2); // Scale up by 20%
+        
+        // Move the hovered part slightly forward
+        const originalPart = bodyParts.find(p => p.id === bodyPartId);
+        if (originalPart) {
+          const [x, y, z] = originalPart.position;
+          intersectedMesh.position.set(x, y, z + 0.5); // Move forward by 0.5 units
+        }
+        
         setHoveredPart(bodyPartId);
         
         // Change cursor
@@ -458,6 +480,15 @@ const InteractiveBodyMap3D: React.FC = () => {
     const animate = () => {
       requestAnimationFrame(animate);
       controls.update();
+      
+      // Add subtle pulsing effect for hovered body part
+      if (hoveredPart && bodyPartMeshes[hoveredPart]) {
+        const mesh = bodyPartMeshes[hoveredPart];
+        const time = Date.now() * 0.003; // Slow pulsing
+        const pulseScale = 1.2 + Math.sin(time) * 0.05; // Subtle pulse between 1.15 and 1.25
+        mesh.scale.set(pulseScale, pulseScale, pulseScale);
+      }
+      
       renderer.render(scene, camera);
     };
 
@@ -526,10 +557,10 @@ const InteractiveBodyMap3D: React.FC = () => {
             
             <div className="mt-3 text-center text-xs text-muted-foreground">
               <p className="mb-1">
-                <strong>Controls:</strong> Left click to rotate • Scroll to zoom • Right click to pan
+                <strong>Controls:</strong> Left click to rotate
               </p>
               <p>
-                <strong>Tip:</strong> Hover over body parts to highlight them, click to see detailed information
+                <strong>Tip:</strong> Hover over body parts to see them pop out, click to see detailed information
               </p>
             </div>
           </div>
