@@ -11,7 +11,7 @@ import { TopNavigation } from "@/components/navigation/TopNavigation";
 import { BottomNavigation } from "@/components/navigation/BottomNavigation";
 import { AIAssistant } from "@/components/ai/AIAssistant";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import Index from "@/pages/Index";
+import Index from "@/pages/index";
 import ClinicalDocs from "./pages/ClinicalDocs";
 import Symptomate from "./pages/Symptomate";
 import Medicine from "./pages/Medicine";
