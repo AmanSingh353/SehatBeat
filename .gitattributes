@@ -16,6 +16,10 @@
 *.yaml text
 *.txt text
 
+# Ensure Git config files use LF to avoid CRLF warnings/noise
+.gitattributes text eol=lf
+.gitignore text eol=lf
+
 # Declare files that will always have CRLF line endings on checkout
 *.bat text eol=crlf
 

@@ -1,2 +1,16 @@
-
 .env.local
+ 
+ # Environment files
+ .env
+ .env.*
+ !.env.example
+
+ # Frontend env files (explicit)
+ frontend/.env
+ frontend/.env.*
+ !frontend/.env.example
+
+ # Misc local dev
+ .envrc
+ .vercel
+ .DS_Store
